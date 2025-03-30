@@ -1,0 +1,104 @@
+name: PR Changelog Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-changeset:
+    name: Check Changeset
+    if: github.event.pull_request.base.ref == 'develop' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install deps
+        run: pnpm install
+
+      - name: Fetch develop branch
+        run: git fetch origin develop:develop
+
+      - name: Detect changed files
+        id: changes
+        run: |
+          git diff --name-only origin/develop HEAD > changed_files.txt
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          cat changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Check for changeset
+        id: check-changeset
+        continue-on-error: true
+        run: |
+          pnpm changeset status
+        env:
+          CHANGESETS_BASE_BRANCH: develop
+
+      - name: Comment if no changeset
+        if: steps.check-changeset.outcome == 'failure'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const changedFiles = `${{ steps.changes.outputs.changed_files }}`;
+            const body = `## 🔄 변경사항이 감지되었습니다!
+
+            다음 파일들이 변경되었습니다:
+            \`\`\`
+            ${changedFiles}
+            \`\`\`
+
+            ### 버전 업데이트 타입을 선택해주세요:
+
+            아래 코멘트 중 하나로 응답해주세요:
+            - \`/changeset major\` - 주요 변경사항 (Breaking Changes)
+            - \`/changeset minor\` - 새로운 기능 추가
+            - \`/changeset patch\` - 버그 수정`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number || context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body
+            });
+
+      - name: Handle comment and generate changeset
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const commentBody = context.payload.comment.body.trim().toLowerCase();
+            const versionType = commentBody.split(' ')[1];
+            const allowed = ['major', 'minor', 'patch'];
+
+            if (!commentBody.startsWith('/changeset') || !allowed.includes(versionType)) return;
+
+            const exec = require('child_process').execSync;
+            exec(`pnpm changeset add --${versionType}`);
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body: `✅ \`${versionType}\` 타입 changeset이 생성되었습니다.`
+            });
