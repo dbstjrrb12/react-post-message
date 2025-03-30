@@ -1,0 +1,130 @@
+name: PR Changelog Check
+
+on:
+  pull_request:
+    types: [opened, synchronize] # PR이 생성되거나 업데이트될 때
+    branches:
+      - develop # develop 브랜치로의 PR일 때만
+
+jobs:
+  check-changelog:
+    name: Check Changeset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # PR의 변경사항과 이전 커밋만 필요
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Detect Changes
+        id: changes
+        run: |
+          git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} > changed_files.txt
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          cat changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Check for Changeset
+        id: check-changeset
+        run: |
+          if pnpm changeset status; then
+            echo "has_changeset=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changeset=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Version Selection Comment
+        if: steps.check-changeset.outputs.has_changeset == 'false'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const changedFiles = `${{ steps.changes.outputs.changed_files }}`;
+
+            if (!changedFiles) {
+              return;
+            }
+
+            const body = `## 🔄 변경사항이 감지되었습니다!
+
+            다음 파일들이 변경되었습니다:
+            \`\`\`
+            ${changedFiles}
+            \`\`\`
+
+            ### 버전 업데이트 타입을 선택해주세요:
+
+            아래 코멘트 중 하나로 응답해주세요:
+            - \`/changeset major\` - 주요 변경사항 (Breaking Changes)
+            - \`/changeset minor\` - 새로운 기능 추가
+            - \`/changeset patch\` - 버그 수정
+
+            선택하시면 자동으로 changeset이 생성됩니다.`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body
+            });
+
+      - name: Handle Version Selection
+        if: steps.check-changeset.outputs.has_changeset == 'false'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const handleVersionSelection = async ({ comment }) => {
+              const versionTypes = ['major', 'minor', 'patch'];
+              const commentBody = comment.body.trim().toLowerCase();
+              
+              if (!commentBody.startsWith('/changeset')) {
+                return;
+              }
+
+              const type = commentBody.split(' ')[1];
+              if (!versionTypes.includes(type)) {
+                return;
+              }
+
+              // 여기서 changeset 생성 명령 실행
+              const exec = require('child_process').execSync;
+              try {
+                exec(`pnpm changeset add --${type}`);
+                
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.name,
+                  body: `✅ ${type} 타입의 changeset이 생성되었습니다.`
+                });
+              } catch (error) {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.name,
+                  body: `❌ changeset 생성 중 오류가 발생했습니다: ${error.message}`
+                });
+              }
+            };
+
+            // PR 코멘트 이벤트 구독
+            github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+            }).then(({ data: comments }) => {
+              comments.forEach(handleVersionSelection);
+            });
