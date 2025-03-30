@@ -76,9 +76,9 @@ jobs:
             - \`/changeset patch\` - 버그 수정`;
 
             await github.rest.issues.createComment({
-              issue_number: context.issue.number || context.payload.pull_request.number,
+              issue_number: context.issue?.number || context.payload.issue?.number || context.payload.pull_request?.number,
               owner: context.repo.owner,
-              repo: context.repo.name,
+              repo: context.repo.repo,
               body
             });
 
