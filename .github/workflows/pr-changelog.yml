@@ -48,8 +48,8 @@ jobs:
           # packages 디렉토리 내의 변경사항만 필터링
           grep "^packages/" changed_files.txt > package_changes.txt || true
 
-          # changeset 파일 존재 여부 확인
-          ls .changeset/*.md > changeset_files.txt 2>/dev/null || true
+          # changeset 파일 존재 여부 확인 (README.md 제외)
+          find .changeset -name "*.md" ! -name "README.md" > changeset_files.txt 2>/dev/null || true
 
           echo "changed_files<<EOF" >> $GITHUB_OUTPUT
           cat changed_files.txt >> $GITHUB_OUTPUT
