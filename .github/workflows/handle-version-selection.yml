@@ -7,7 +7,7 @@ on:
 jobs:
   handle-version:
     name: Handle Version Selection
-    if: github.event.issue.pull_request
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/changeset')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -41,7 +41,7 @@ jobs:
       - name: Handle Version Selection
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_ACTIONS_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
             // PR 정보 가져오기
             const { data: pullRequest } = await github.rest.pulls.get({
