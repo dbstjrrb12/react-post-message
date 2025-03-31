@@ -1,0 +1,37 @@
+name: Merge develop to main
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge develop into main
+        run: |
+          git fetch origin develop:develop
+          git checkout -b auto-merge-develop
+          git merge develop --no-ff -m "🔀 Auto-merge: develop → main"
+          git push origin auto-merge-develop
+
+      - name: Create PR to main
+        uses: peter-evans/create-pull-request@v5
+        with:
+          base: main
+          head: auto-merge-develop
+          title: '🔀 Auto PR: Merge develop into main'
+          body: '자동 생성된 PR입니다. develop의 최신 변경사항을 main으로 병합합니다.'
+          branch: auto-merge-develop
+          delete-branch: true

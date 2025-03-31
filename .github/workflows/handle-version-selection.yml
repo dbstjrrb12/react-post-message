@@ -1,0 +1,89 @@
+name: Handle Version Selection
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  handle-version:
+    name: Handle Version Selection
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Handle Version Selection
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_ACTIONS_TOKEN }}
+          script: |
+            // PR 정보 가져오기
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              pull_number: context.issue.number
+            });
+
+            // develop 브랜치로의 PR인지 확인
+            if (pullRequest.base.ref !== 'develop') {
+              console.log('이 워크플로우는 develop 브랜치로의 PR에서만 실행됩니다.');
+              return;
+            }
+
+            const comment = context.payload.comment;
+            const versionTypes = ['major', 'minor', 'patch'];
+            const commentBody = comment.body.trim().toLowerCase();
+
+            if (!commentBody.startsWith('/changeset')) {
+              return;
+            }
+
+            const type = commentBody.split(' ')[1];
+            if (!versionTypes.includes(type)) {
+              return;
+            }
+
+            // 여기서 changeset 생성 명령 실행
+            const exec = require('child_process').execSync;
+            try {
+              exec(`pnpm changeset add --${type}`);
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.name,
+                body: `✅ ${type} 타입의 changeset이 생성되었습니다.`
+              });
+            } catch (error) {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.name,
+                body: `❌ changeset 생성 중 오류가 발생했습니다: ${error.message}`
+              });
+            }
