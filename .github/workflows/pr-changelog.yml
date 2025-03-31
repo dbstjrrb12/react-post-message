@@ -96,9 +96,10 @@ jobs:
 
             선택하시면 자동으로 changeset이 생성됩니다.`;
 
+            const { owner, repo } = context.repo;
             await github.rest.issues.createComment({
+              owner,
+              repo,
               issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.name,
               body
             });
