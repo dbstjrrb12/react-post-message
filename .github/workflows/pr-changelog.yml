@@ -1,0 +1,104 @@
+name: PR Changelog Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-changelog:
+    name: Check Changeset
+    if: github.event.pull_request.base.ref == 'develop'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git fetch origin develop:develop
+
+      - name: Detect Changes
+        id: changes
+        run: |
+          # 변경된 파일 목록 가져오기
+          git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} > changed_files.txt
+
+          # packages 디렉토리 내의 변경사항만 필터링
+          grep "^packages/" changed_files.txt > package_changes.txt || true
+
+          # changeset 파일 존재 여부 확인
+          ls .changeset/*.md > changeset_files.txt 2>/dev/null || true
+
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          cat changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "package_changes<<EOF" >> $GITHUB_OUTPUT
+          cat package_changes.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "has_changeset<<EOF" >> $GITHUB_OUTPUT
+          if [ -s changeset_files.txt ]; then
+            echo "true" >> $GITHUB_OUTPUT
+          else
+            echo "false" >> $GITHUB_OUTPUT
+          fi
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Version Selection Comment
+        if: steps.changes.outputs.package_changes != '' && steps.changes.outputs.has_changeset == 'false'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_ACTIONS_TOKEN }}
+          script: |
+            const changedFiles = `${{ steps.changes.outputs.changed_files }}`;
+            const packageChanges = `${{ steps.changes.outputs.package_changes }}`;
+
+            if (!packageChanges) {
+              return;
+            }
+
+            const body = `## 🔄 패키지 변경사항이 감지되었습니다!
+
+            다음 패키지들이 변경되었습니다:
+            \`\`\`
+            ${packageChanges}
+            \`\`\`
+
+            ### 버전 업데이트 타입을 선택해주세요:
+
+            아래 코멘트 중 하나로 응답해주세요:
+            - \`/changeset major\` - 주요 변경사항 (Breaking Changes)
+            - \`/changeset minor\` - 새로운 기능 추가
+            - \`/changeset patch\` - 버그 수정
+
+            선택하시면 자동으로 changeset이 생성됩니다.`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body
+            });
