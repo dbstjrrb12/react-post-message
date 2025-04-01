@@ -36,7 +36,7 @@ jobs:
       - name: Get PR details
         id: get-pr
         run: |
-          PR_NUMBER=${{ github.event.issue.number }}
+          PR_NUMBER="${{ github.event.issue.number }}"
           PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | \
             jq -r '.title')
