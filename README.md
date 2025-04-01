@@ -9,6 +9,7 @@ A React hook for cross-window communication using the `postMessage` API.
 - Easy to use API
 - Built with TypeScript
 - Comprehensive documentation
+- Automated version management
 
 ## Installation
 

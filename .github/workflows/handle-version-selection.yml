@@ -5,10 +5,8 @@ on:
     types: [created]
 
 jobs:
-  handle-version:
-    if: |
-      github.event.issue.pull_request != null &&
-      startsWith(github.event.comment.body, '/changeset')
+  handle-version-selection:
+    if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,19 +16,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.issue.pull_request.head.ref }}
           fetch-depth: 0
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
 
       - name: Install dependencies
         run: pnpm install
@@ -39,44 +37,49 @@ jobs:
         id: get-pr
         run: |
           PR_NUMBER="${{ github.event.issue.number }}"
-          PR_TITLE="${{ github.event.issue.title }}"
-          PR_BRANCH="${{ github.event.pull_request.head.ref }}"
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | \
+            jq -r '.title')
           echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
-          echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
 
       - name: Create changeset
+        id: create-changeset
         run: |
           mkdir -p .changeset
-          cat > .changeset/pr-${{ steps.get-pr.outputs.pr_number }}.md << EOF
+          BUMP_TYPE=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset \([a-z]*\).*/\1/p' || echo "patch")
+          CHANGESET_FILE=".changeset/pr-${{ github.event.issue.number }}.md"
+          cat > "$CHANGESET_FILE" << EOF
           ---
-          "@yoonseokgyu/react-post-message": ${{ contains(github.event.comment.body, 'minor') && 'minor' || contains(github.event.comment.body, 'major') && 'major' || 'patch' }}
+          "react-post-message": $BUMP_TYPE
           ---
 
-          PR #${{ steps.get-pr.outputs.pr_number }} - ${{ steps.get-pr.outputs.pr_title }}
+          ${{ steps.get-pr.outputs.pr_title }}
           EOF
-          echo "Created changeset file: .changeset/pr-${{ steps.get-pr.outputs.pr_number }}.md"
+          echo "changeset_file=$CHANGESET_FILE" >> $GITHUB_OUTPUT
 
-      - name: Commit changeset
+      - name: Commit and push changeset
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add .changeset/
-          git status
-          git commit -m "docs: add changeset for PR #${{ steps.get-pr.outputs.pr_number }}"
-
-      - name: Push changes
-        run: |
-          git push origin ${{ steps.get-pr.outputs.pr_branch }}
-          echo "Pushed changes to PR branch: ${{ steps.get-pr.outputs.pr_branch }}"
+          git add "${{ steps.create-changeset.outputs.changeset_file }}"
+          git commit -m "chore: add changeset for PR #${{ github.event.issue.number }}"
+          if ! git push origin HEAD; then
+            echo "Failed to push changeset"
+            exit 1
+          fi
 
       - name: Comment on PR
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ changeset success'
-            })
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '✅ changeset success'
+              })
+            } catch (error) {
+              console.error('Failed to create comment:', error)
+              process.exit(1)
+            }
