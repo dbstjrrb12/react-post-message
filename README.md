@@ -12,6 +12,8 @@ A React hook for cross-window communication using `window.postMessage`.
   - Automatic version bumping based on PR comments
   - Support for patch, minor, and major version updates
   - Automated changelog generation
+  - Changeset files are created in PR branches
+  - Version updates are applied when PRs are merged
 - Easy to use API
 
 ## Installation
