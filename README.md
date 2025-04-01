@@ -15,6 +15,7 @@ A React hook for cross-window communication using `window.postMessage`.
   - Changeset files are created in PR branches
   - Version updates are applied when PRs are merged
   - Changeset files are automatically created when you comment `/changeset [type]` on PRs
+  - Changeset files are created in the PR branch and merged to main when PR is merged
 - Easy to use API
 
 ## Installation
