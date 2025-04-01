@@ -2,7 +2,7 @@ name: Handle Version Selection
 
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited]
 
 jobs:
   handle-version-selection:
@@ -47,12 +47,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Create changeset
+      - name: Create or update changeset
         id: create-changeset
         run: |
           mkdir -p .changeset
           BUMP_TYPE=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset \([a-z]*\).*/\1/p' || echo "patch")
           CHANGESET_FILE=".changeset/pr-${{ github.event.issue.number }}.md"
+
+          # Check if changeset already exists
+          if [ -f "$CHANGESET_FILE" ]; then
+            echo "Updating existing changeset file..."
+            # Extract existing bump type if present
+            EXISTING_BUMP=$(grep -o '"react-post-message": [a-z]*' "$CHANGESET_FILE" | cut -d' ' -f2 || echo "")
+            if [ -n "$EXISTING_BUMP" ]; then
+              BUMP_TYPE=$EXISTING_BUMP
+            fi
+          else
+            echo "Creating new changeset file..."
+          fi
+
           cat > "$CHANGESET_FILE" << EOF
           ---
           "react-post-message": $BUMP_TYPE
@@ -67,7 +80,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add "${{ steps.create-changeset.outputs.changeset_file }}"
-          git commit -m "chore: add changeset for PR #${{ github.event.issue.number }}"
+          git commit -m "chore: $([ -f "${{ steps.create-changeset.outputs.changeset_file }}" ] && echo "update" || echo "add") changeset for PR #${{ github.event.issue.number }}"
           git push origin ${{ steps.get-pr.outputs.pr_branch }} --force
 
       - name: Comment on PR
@@ -79,7 +92,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: '✅ changeset success'
+                body: '✅ changeset ' + (context.event.action === 'edited' ? 'updated' : 'created') + ' successfully'
               })
             } catch (error) {
               console.error('Failed to create comment:', error)
