@@ -10,17 +10,20 @@ permissions:
   issues: write
 
 jobs:
-  debug_event:
+  handle_comment:
+    if: github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - name: Debug Event Info
+      - name: Debug Event
         uses: actions/github-script@v7
         with:
           script: |
-            console.log('Full event:', JSON.stringify(context, null, 2))
+            console.log('Event:', JSON.stringify(context.payload, null, 2))
+            console.log('Comment body:', context.payload.comment.body)
+            console.log('Is PR:', !!context.payload.issue.pull_request)
 
-      - name: Comment on PR
-        if: github.event.issue.pull_request && contains(github.event.comment.body, '/changeset')
+      - name: Handle Changeset Comment
+        if: contains(github.event.comment.body, '/changeset')
         uses: actions/github-script@v7
         with:
           script: |
