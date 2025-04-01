@@ -65,6 +65,12 @@ jobs:
           git config --local user.name "GitHub Action"
           git add "${{ steps.create-changeset.outputs.changeset_file }}"
           git commit -m "chore: add changeset for PR #${{ github.event.issue.number }}"
+          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          echo "Current branch: $CURRENT_BRANCH"
+          echo "Target branch: ${{ steps.get-pr.outputs.pr_branch }}"
+          if [ "$CURRENT_BRANCH" != "${{ steps.get-pr.outputs.pr_branch }}" ]; then
+            git checkout ${{ steps.get-pr.outputs.pr_branch }}
+          fi
           if ! git push origin ${{ steps.get-pr.outputs.pr_branch }}; then
             echo "Failed to push changeset"
             exit 1
