@@ -11,23 +11,20 @@ permissions:
 
 jobs:
   debug:
+    name: Debug Event
     runs-on: ubuntu-latest
-    if: ${{ github.event.issue.pull_request }}
     steps:
       - name: Debug Event
-        env:
-          EVENT_CONTEXT: ${{ toJSON(github.event) }}
         run: |
           echo "Event Type: ${{ github.event_name }}"
-          echo "Is PR Comment: ${{ github.event.issue.pull_request != null }}"
           echo "Comment Body: ${{ github.event.comment.body }}"
-          echo "PR API URL: ${{ github.event.issue.pull_request.url }}"
-          echo "Full Event Context:"
-          echo "$EVENT_CONTEXT"
+          echo "Is PR: ${{ github.event.issue.pull_request }}"
+          echo "PR URL: ${{ github.event.issue.pull_request.url }}"
 
   handle-version:
+    name: Handle Version Selection
     needs: debug
-    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, '/changeset') }}
+    if: ${{ github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
