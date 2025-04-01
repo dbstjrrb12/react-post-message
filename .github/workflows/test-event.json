@@ -1,0 +1,20 @@
+{
+  "event_type": "issue_comment",
+  "action": "created",
+  "comment": {
+    "body": "/changeset patch",
+    "html_url": "https://github.com/dbstjrrb12/react-post-message/pull/16#issuecomment-2769210217"
+  },
+  "issue": {
+    "number": 16,
+    "pull_request": {
+      "url": "https://api.github.com/repos/dbstjrrb12/react-post-message/pulls/16"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "dbstjrrb12"
+    },
+    "name": "react-post-message"
+  }
+}
