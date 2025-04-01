@@ -92,7 +92,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: '✅ changeset ' + (context.event.action === 'edited' ? 'updated' : 'created') + ' successfully'
+                body: '✅ changeset updated successfully'
               })
             } catch (error) {
               console.error('Failed to create comment:', error)
