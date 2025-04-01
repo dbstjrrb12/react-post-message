@@ -3,20 +3,6 @@ name: Handle Version Selection
 on:
   issue_comment:
     types: [created]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 'Pull Request Number'
-        required: true
-        type: string
-      version_type:
-        description: 'Version Type (major/minor/patch)'
-        required: true
-        type: choice
-        options:
-          - major
-          - minor
-          - patch
 
 permissions:
   contents: write
@@ -24,136 +10,19 @@ permissions:
   issues: write
 
 jobs:
-  debug:
-    name: Debug Event
-    runs-on: ubuntu-latest
-    steps:
-      - name: Debug Event
-        run: |
-          echo "Event Type: ${{ github.event_name }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "PR Number: ${{ github.event.inputs.pr_number }}"
-            echo "Version Type: ${{ github.event.inputs.version_type }}"
-          else
-            echo "Comment Body: ${{ github.event.comment.body }}"
-            echo "Is PR: ${{ github.event.issue.pull_request }}"
-            echo "PR URL: ${{ github.event.issue.pull_request.url }}"
-          fi
-
   handle-version:
     name: Handle Version Selection
-    needs: debug
-    if: |
-      ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request }} ||
-      ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, '/changeset') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Install Dependencies
-        run: pnpm install
-
-      - name: Configure Git
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-
-      - name: Get PR Details
-        id: pr-info
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            let prNumber;
-            if (context.eventName === 'workflow_dispatch') {
-              prNumber = context.payload.inputs.pr_number;
-            } else {
-              prNumber = context.issue.number;
-            }
-
-            const { data: pullRequest } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
-
-            core.setOutput('base_branch', pullRequest.base.ref);
-            core.setOutput('head_branch', pullRequest.head.ref);
-            core.setOutput('pr_number', prNumber);
-
-      - name: Create Changeset
-        if: steps.pr-info.outputs.base_branch == 'develop'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            const prNumber = `${{ steps.pr-info.outputs.pr_number }}`;
-            let versionType;
-            if (`${{ github.event_name }}` === 'workflow_dispatch') {
-              versionType = `${{ github.event.inputs.version_type }}`;
-            } else {
-              const commentBody = `${{ github.event.comment.body }}`;
-              versionType = commentBody.split(' ')[1];
-            }
-            const { data: pullRequest } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
-
-            const changesetContent = [
-              '---',
-              `"packages/src": ${versionType}`,
-              '---',
-              '',
-              pullRequest.title
-            ].join('\n');
-
-            await github.rest.repos.createOrUpdateFileContents({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              path: `.changeset/${prNumber}-${versionType}.md`,
-              message: `chore: add changeset for PR #${prNumber}`,
-              content: Buffer.from(changesetContent).toString('base64')
-            });
-
       - name: Comment on PR
         uses: actions/github-script@v7
         with:
           github-token: ${{ github.token }}
           script: |
-            const prNumber = `${{ steps.pr-info.outputs.pr_number }}`;
-            const baseBranch = `${{ steps.pr-info.outputs.base_branch }}`;
-            let versionType;
-            if (`${{ github.event_name }}` === 'workflow_dispatch') {
-              versionType = `${{ github.event.inputs.version_type }}`;
-            } else {
-              const commentBody = `${{ github.event.comment.body }}`;
-              versionType = commentBody.split(' ')[1];
-            }
-
-            let commentBody = '';
-            if (baseBranch === 'develop') {
-              commentBody = `✅ Changeset이 생성되었습니다!\n\n- PR: #${prNumber}\n- 버전 타입: ${versionType}\n\n이제 PR을 머지하면 자동으로 버전이 업데이트됩니다.`;
-            } else {
-              commentBody = `❌ Changeset을 생성할 수 없습니다.\n\n- PR의 기준 브랜치가 develop이 아닙니다.\n- 현재 기준 브랜치: ${baseBranch}`;
-            }
-
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: prNumber,
-              body: commentBody
+              issue_number: context.issue.number,
+              body: '✅ changeset success'
             });
