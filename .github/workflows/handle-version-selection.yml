@@ -15,14 +15,13 @@ jobs:
     steps:
       - name: Comment on PR
         if: contains(github.event.comment.body, '/changeset')
-        uses: actions/github-script@v7
+        uses: actions/github-script@v5
         with:
-          github-token: ${{ github.token }}
+          github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
-            const commentBody = context.payload.comment.body;
-            await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: '✅ changeset success'
-              });
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀'
+            })
