@@ -82,7 +82,7 @@ jobs:
             } else {
               prNumber = context.issue.number;
             }
-            
+
             const { data: pullRequest } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -100,19 +100,26 @@ jobs:
           github-token: ${{ github.token }}
           script: |
             const prNumber = `${{ steps.pr-info.outputs.pr_number }}`;
-            const versionType = `${{ github.event_name === 'workflow_dispatch' ? github.event.inputs.version_type : github.event.comment.body.split(' ')[1] }}`;
+            let versionType;
+            if (`${{ github.event_name }}` === 'workflow_dispatch') {
+              versionType = `${{ github.event.inputs.version_type }}`;
+            } else {
+              const commentBody = `${{ github.event.comment.body }}`;
+              versionType = commentBody.split(' ')[1];
+            }
             const { data: pullRequest } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: prNumber
             });
 
-            const changesetContent = `---
-"packages/src": ${versionType}
----
-
-${pullRequest.title}
-`;
+            const changesetContent = [
+              '---',
+              `"packages/src": ${versionType}`,
+              '---',
+              '',
+              pullRequest.title
+            ].join('\n');
 
             await github.rest.repos.createOrUpdateFileContents({
               owner: context.repo.owner,
@@ -129,7 +136,13 @@ ${pullRequest.title}
           script: |
             const prNumber = `${{ steps.pr-info.outputs.pr_number }}`;
             const baseBranch = `${{ steps.pr-info.outputs.base_branch }}`;
-            const versionType = `${{ github.event_name === 'workflow_dispatch' ? github.event.inputs.version_type : github.event.comment.body.split(' ')[1] }}`;
+            let versionType;
+            if (`${{ github.event_name }}` === 'workflow_dispatch') {
+              versionType = `${{ github.event.inputs.version_type }}`;
+            } else {
+              const commentBody = `${{ github.event.comment.body }}`;
+              versionType = commentBody.split(' ')[1];
+            }
 
             let commentBody = '';
             if (baseBranch === 'develop') {
