@@ -12,20 +12,21 @@ permissions:
 jobs:
   debug:
     runs-on: ubuntu-latest
+    if: ${{ github.event.issue.pull_request }}
     steps:
       - name: Debug Event
+        env:
+          EVENT_CONTEXT: ${{ toJSON(github.event) }}
         run: |
           echo "Event Type: ${{ github.event_name }}"
+          echo "Is PR Comment: ${{ github.event.issue.pull_request != null }}"
           echo "Comment Body: ${{ github.event.comment.body }}"
-          echo "Is PR?: ${{ github.event.issue.pull_request != null }}"
-          echo "PR Number: ${{ github.event.issue.number }}"
-          echo "Repository: ${{ github.repository }}"
-          echo "Actor: ${{ github.actor }}"
-          echo "PR URL: ${{ github.event.issue.pull_request.url }}"
+          echo "PR API URL: ${{ github.event.issue.pull_request.url }}"
+          echo "Full Event Context:"
+          echo "$EVENT_CONTEXT"
 
   handle-version:
     needs: debug
-    name: Handle Version Selection
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, '/changeset') }}
     runs-on: ubuntu-latest
     steps:
@@ -53,64 +54,48 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Handle Version Selection
+      - name: Get PR Details
+        id: pr-details
         uses: actions/github-script@v7
         with:
-          github-token: ${{ github.token }}
           script: |
-            console.log('Starting version selection handling...');
+            const prUrl = context.payload.issue.pull_request.url;
+            console.log('Fetching PR details from:', prUrl);
 
-            try {
-              const prUrl = context.payload.issue.pull_request.url;
-              console.log('PR URL:', prUrl);
-              
-              // PR API URL에서 PR 정보 가져오기
-              const { data: pullRequest } = await github.request(prUrl);
-              console.log('Pull request data:', pullRequest);
+            const { data: pr } = await github.request(prUrl);
+            console.log('PR Base Branch:', pr.base.ref);
 
-              console.log('Pull request base branch:', pullRequest.base.ref);
-              
-              // develop 브랜치로의 PR인지 확인
-              if (pullRequest.base.ref !== 'develop') {
-                console.log('This workflow only runs on PRs targeting develop branch');
-                return;
-              }
-
-              const comment = context.payload.comment;
-              const versionTypes = ['major', 'minor', 'patch'];
-              const commentBody = comment.body.trim().toLowerCase();
-              
-              console.log('Processing comment:', commentBody);
-
-              if (!commentBody.startsWith('/changeset')) {
-                console.log('Comment does not start with /changeset');
-                return;
-              }
-
-              const type = commentBody.split(' ')[1];
-              console.log('Version type:', type);
-              
-              if (!versionTypes.includes(type)) {
-                console.log('Invalid version type');
-                return;
-              }
-
-              // changeset 생성
-              const exec = require('child_process').execSync;
-              exec(`pnpm changeset add --${type}`);
-              
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.name,
-                body: `✅ ${type} 타입의 changeset이 생성되었습니다.`
-              });
-            } catch (error) {
-              console.error('Error:', error);
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.name,
-                body: `❌ changeset 생성 중 오류가 발생했습니다: ${error.message}`
-              });
+            return {
+              base: pr.base.ref,
+              head: pr.head.ref,
+              number: pr.number
             }
+
+      - name: Create Changeset
+        if: steps.pr-details.outputs.base == 'develop'
+        run: |
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          TYPE=$(echo "$COMMENT_BODY" | awk '{print $2}')
+
+          if [[ "$TYPE" =~ ^(major|minor|patch)$ ]]; then
+            pnpm changeset add --$TYPE
+            git add .changeset
+            git commit -m "chore: add changeset for $TYPE update"
+            git push origin HEAD
+          else
+            echo "Invalid version type: $TYPE"
+            exit 1
+          fi
+
+      - name: Comment on PR
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const type = context.payload.comment.body.split(' ')[1];
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              issue_number: context.issue.number,
+              body: `✅ ${type} 타입의 changeset이 생성되었습니다.`
+            });
