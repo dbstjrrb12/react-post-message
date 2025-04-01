@@ -8,6 +8,10 @@ jobs:
   handle-version:
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -15,16 +19,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
 
       - name: Install dependencies
         run: pnpm install
@@ -47,16 +51,20 @@ jobs:
 
           PR #${{ steps.get-pr.outputs.pr_number }} - ${{ steps.get-pr.outputs.pr_title }}
           EOF
+          echo "Created changeset file: .changeset/pr-${{ steps.get-pr.outputs.pr_number }}.md"
 
       - name: Commit changeset
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add .changeset/
+          git status
           git commit -m "docs: add changeset for PR #${{ steps.get-pr.outputs.pr_number }}"
 
       - name: Push changes
-        run: git push origin HEAD
+        run: |
+          git push origin HEAD
+          echo "Pushed changes to remote"
 
       - name: Comment on PR
         uses: actions/github-script@v7
