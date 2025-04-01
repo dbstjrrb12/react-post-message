@@ -9,6 +9,9 @@ A React hook for cross-window communication using `window.postMessage`.
 - Automatic cleanup of event listeners
 - TypeScript support
 - Automated version management with changesets
+  - Automatic version bumping based on PR comments
+  - Support for patch, minor, and major version updates
+  - Automated changelog generation
 - Easy to use API
 
 ## Installation
