@@ -40,9 +40,10 @@ jobs:
           PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | \
             jq -r '.title')
-          PR_BRANCH="${{ github.event.issue.pull_request.head.ref }}"
+          PR_BRANCH="${{ github.ref_name }}"
           echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
           echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
+          echo "PR branch: $PR_BRANCH"
 
       - name: Create changeset
         id: create-changeset
@@ -71,10 +72,7 @@ jobs:
           if [ "$CURRENT_BRANCH" != "${{ steps.get-pr.outputs.pr_branch }}" ]; then
             git checkout ${{ steps.get-pr.outputs.pr_branch }}
           fi
-          if ! git push origin ${{ steps.get-pr.outputs.pr_branch }}; then
-            echo "Failed to push changeset"
-            exit 1
-          fi
+          git push origin ${{ steps.get-pr.outputs.pr_branch }} --force
 
       - name: Comment on PR
         uses: actions/github-script@v7
