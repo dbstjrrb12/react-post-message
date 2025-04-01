@@ -3,11 +3,15 @@ name: PR Changelog Check
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
 
 jobs:
   check-changelog:
     name: Check Changeset
-    if: github.event.pull_request.base.ref == 'develop'
+    if: |
+      (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'develop') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.pull_request.base.ref == 'develop')
     runs-on: ubuntu-latest
     permissions:
       contents: write
