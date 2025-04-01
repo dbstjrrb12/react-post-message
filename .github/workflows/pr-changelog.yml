@@ -14,6 +14,13 @@ jobs:
       pull-requests: write
       issues: write
     steps:
+      - name: Debug Event
+        run: |
+          echo "Event Type: ${{ github.event_name }}"
+          echo "PR Base Branch: ${{ github.event.pull_request.base.ref }}"
+          echo "PR Head Branch: ${{ github.event.pull_request.head.ref }}"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -44,12 +51,18 @@ jobs:
         run: |
           # 변경된 파일 목록 가져오기
           git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} > changed_files.txt
+          echo "Changed files:"
+          cat changed_files.txt
 
           # packages 디렉토리 내의 변경사항만 필터링
           grep "^packages/" changed_files.txt > package_changes.txt || true
+          echo "Package changes:"
+          cat package_changes.txt
 
           # changeset 파일 존재 여부 확인 (README.md 제외)
           find .changeset -name "*.md" ! -name "README.md" > changeset_files.txt 2>/dev/null || true
+          echo "Changeset files:"
+          cat changeset_files.txt
 
           echo "changed_files<<EOF" >> $GITHUB_OUTPUT
           cat changed_files.txt >> $GITHUB_OUTPUT
@@ -67,6 +80,13 @@ jobs:
           fi
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Debug Outputs
+        run: |
+          echo "Package Changes Output:"
+          echo "${{ steps.changes.outputs.package_changes }}"
+          echo "Has Changeset Output:"
+          echo "${{ steps.changes.outputs.has_changeset }}"
+
       - name: Create Version Selection Comment
         if: steps.changes.outputs.package_changes != '' && steps.changes.outputs.has_changeset == 'false'
         uses: actions/github-script@v7
@@ -77,6 +97,7 @@ jobs:
             const packageChanges = `${{ steps.changes.outputs.package_changes }}`;
 
             if (!packageChanges) {
+              console.log('No package changes detected');
               return;
             }
 
