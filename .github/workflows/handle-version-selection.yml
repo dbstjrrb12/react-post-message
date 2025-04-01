@@ -36,8 +36,8 @@ jobs:
       - name: Get PR details
         id: get-pr
         run: |
-          PR_NUMBER=${{ github.event.issue.number }}
-          PR_TITLE=${{ github.event.issue.title }}
+          PR_NUMBER="${{ github.event.issue.number }}"
+          PR_TITLE="${{ github.event.issue.title }}"
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
 
