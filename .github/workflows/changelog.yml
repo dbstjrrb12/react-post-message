@@ -1,13 +1,17 @@
-name: PR Changelog Check
+name: Changeset Workflow
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created, edited]
 
 jobs:
   check-changelog:
     name: Check Changeset
-    if: github.event.pull_request.base.ref == 'develop'
+    if: |
+      github.event_name == 'pull_request' && 
+      github.event.pull_request.base.ref == 'develop'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -49,17 +53,14 @@ jobs:
       - name: Detect Changes
         id: changes
         run: |
-          # 변경된 파일 목록 가져오기
           git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} > changed_files.txt
           echo "Changed files:"
           cat changed_files.txt
 
-          # packages 디렉토리 내의 변경사항만 필터링
           grep "^packages/" changed_files.txt > package_changes.txt || true
           echo "Package changes:"
           cat package_changes.txt
 
-          # changeset 파일 존재 여부 확인 (README.md 제외)
           find .changeset -name "*.md" ! -name "README.md" > changeset_files.txt 2>/dev/null || true
           echo "Changeset files:"
           cat changeset_files.txt
@@ -117,10 +118,105 @@ jobs:
 
             선택하시면 자동으로 changeset이 생성됩니다.`;
 
-            const { owner, repo } = context.repo;
             await github.rest.issues.createComment({
-              owner,
-              repo,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
               issue_number: context.issue.number,
               body
             });
+
+  handle-version-selection:
+    name: Handle Version Selection
+    if: |
+      github.event_name == 'issue_comment' && 
+      github.event.issue.pull_request && 
+      startsWith(github.event.comment.body, '/changeset')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Get PR details
+        id: get-pr
+        run: |
+          PR_NUMBER="${{ github.event.issue.number }}"
+          PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | \
+            jq -r '.title')
+          PR_BRANCH=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | \
+            jq -r '.head.ref')
+          echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
+          echo "PR branch: $PR_BRANCH"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.get-pr.outputs.pr_branch }}
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Create or update changeset
+        id: create-changeset
+        run: |
+          mkdir -p .changeset
+          BUMP_TYPE=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset \([a-z]*\).*/\1/p' || echo "patch")
+          CHANGESET_FILE=".changeset/pr-${{ github.event.issue.number }}.md"
+
+          if [ -f "$CHANGESET_FILE" ]; then
+            echo "Updating existing changeset file..."
+            EXISTING_BUMP=$(grep -o '"react-post-message": [a-z]*' "$CHANGESET_FILE" | cut -d' ' -f2 || echo "")
+            if [ -n "$EXISTING_BUMP" ]; then
+              BUMP_TYPE=$EXISTING_BUMP
+            fi
+          else
+            echo "Creating new changeset file..."
+          fi
+
+          cat > "$CHANGESET_FILE" << EOF
+          ---
+          "react-post-message": $BUMP_TYPE
+          ---
+
+          ${{ steps.get-pr.outputs.pr_title }}
+          EOF
+          echo "changeset_file=$CHANGESET_FILE" >> $GITHUB_OUTPUT
+
+      - name: Commit and push changeset
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add "${{ steps.create-changeset.outputs.changeset_file }}"
+          git commit -m "chore: $([ -f "${{ steps.create-changeset.outputs.changeset_file }}" ] && echo "update" || echo "add") changeset for PR #${{ github.event.issue.number }}"
+          git push origin ${{ steps.get-pr.outputs.pr_branch }} --force
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '✅ changeset updated successfully'
+              })
+            } catch (error) {
+              console.error('Failed to create comment:', error)
+              process.exit(1)
+            }
