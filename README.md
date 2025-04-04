@@ -1,6 +1,6 @@
 # React Post Message
 
-A React hook for cross-window communication using `window.postMessage`.
+A React hook for type-safe postMessage communication between windows.
 
 ## Features
 
@@ -12,44 +12,63 @@ A React hook for cross-window communication using `window.postMessage`.
   - Automatic version bumping based on PR comments
   - Support for patch, minor, and major version updates
   - Automated changelog generation
-  - Changeset files are created in PR branches
-  - Version updates are applied when PRs are merged
-  - Changeset files are automatically created when you comment `/changeset [type]` on PRs
-  - Changeset files are created in the PR branch and merged to main when PR is merged
-  - Changeset files are created with PR number and title for better tracking
-- Easy to use API!!
+  - Changeset files created in PR branches
+  - Version updates applied upon PR merges
+  - Changeset files created when commenting `/changeset [type]` on PRs
+  - Changeset files named with PR number and title for better tracking
+- Easy to use API
 
 ## Installation
 
 ```bash
-npm install @yoonseokgyu/react-post-message
-# or
-yarn add @yoonseokgyu/react-post-message
-# or
-pnpm add @yoonseokgyu/react-post-message
+pnpm add react-post-message
 ```
 
 ## Usage
 
 ```tsx
-import { usePostMessage } from '@yoonseokgyu/react-post-message';
+import { usePostMessage } from 'react-post-message';
 
 function App() {
-  const { postMessage } = usePostMessage({
-    targetOrigin: 'https://example.com',
-    targetWindow: window.open('https://example.com'),
-  });
+  const { postMessage } = usePostMessage();
 
   const handleClick = () => {
-    postMessage({
-      type: 'GREETING',
-      payload: 'Hello from parent window!',
+    postMessage('child', {
+      type: 'GREET',
+      payload: { name: 'John' },
     });
   };
 
   return <button onClick={handleClick}>Send Message</button>;
 }
 ```
+
+## Changeset Workflow
+
+This project uses changesets to manage versioning and changelog generation. Here's how it works:
+
+1. When you create a PR, you can comment `/changeset [type]` to create a changeset file
+
+   - `type` can be `patch`, `minor`, or `major`
+   - The changeset file will be created in the `.changeset` directory
+   - The file will be named with the PR number and title (e.g., `pr-30.md`)
+
+2. The changeset file will contain:
+
+   - The version bump type
+   - The PR title as the changelog entry
+   - The changeset will be committed to your PR branch
+
+3. When you merge the PR:
+
+   - The changeset will be applied
+   - The version will be bumped according to the type
+   - A changelog entry will be generated
+
+4. If you need to modify the changeset:
+   - You can edit the `/changeset` comment
+   - The changeset file will be updated automatically
+   - The changes will be committed to your PR branch
 
 ## License
 

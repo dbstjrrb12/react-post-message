@@ -1,0 +1,202 @@
+name: Changeset Workflow
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created, edited]
+
+jobs:
+  detect-package-changes:
+    name: Detect Package Changes
+    if: |
+      github.event_name == 'pull_request' && 
+      github.event.pull_request.base.ref == 'develop'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git fetch origin develop:develop
+
+      - name: Detect Changes
+        id: changes
+        run: |
+          git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} > changed_files.txt
+          echo "Changed files:"
+          cat changed_files.txt
+
+          grep "^packages/" changed_files.txt > package_changes.txt || true
+          echo "Package changes:"
+          cat package_changes.txt
+
+          find .changeset -name "*.md" ! -name "README.md" > changeset_files.txt 2>/dev/null || true
+          echo "Changeset files:"
+          cat changeset_files.txt
+
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          cat changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "package_changes<<EOF" >> $GITHUB_OUTPUT
+          cat package_changes.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "has_changeset<<EOF" >> $GITHUB_OUTPUT
+          if [ -s changeset_files.txt ]; then
+            echo "true" >> $GITHUB_OUTPUT
+          else
+            echo "false" >> $GITHUB_OUTPUT
+          fi
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Version Selection Comment
+        if: steps.changes.outputs.package_changes != '' && steps.changes.outputs.has_changeset == 'false'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const changedFiles = `${{ steps.changes.outputs.changed_files }}`;
+            const packageChanges = `${{ steps.changes.outputs.package_changes }}`;
+
+            if (!packageChanges) {
+              console.log('No package changes detected');
+              return;
+            }
+
+            const body = `## 🔄 패키지 변경사항이 감지되었습니다!
+
+            다음 패키지들이 변경되었습니다:
+            \`\`\`
+            ${packageChanges}
+            \`\`\`
+
+            ### 버전 업데이트 타입을 선택해주세요:
+
+            아래 코멘트 중 하나로 응답해주세요:
+            - \`/changeset major\` - 주요 변경사항 (Breaking Changes)
+            - \`/changeset minor\` - 새로운 기능 추가
+            - \`/changeset patch\` - 버그 수정
+
+            선택하시면 자동으로 changeset이 생성됩니다.`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+  manage-changeset:
+    name: Manage Changeset
+    if: |
+      github.event_name == 'issue_comment' && 
+      github.event.issue.pull_request && 
+      contains(github.event.comment.body, '/changeset')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Get PR details
+        id: get-pr
+        run: |
+          PR_NUMBER="${{ github.event.issue.number }}"
+          PR_TITLE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | \
+            jq -r '.title')
+          PR_BRANCH=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | \
+            jq -r '.head.ref')
+          echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
+          echo "PR branch: $PR_BRANCH"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.get-pr.outputs.pr_branch }}
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Apply changeset
+        id: apply-changeset
+        run: |
+          BUMP_TYPE=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset \([a-z]*\).*/\1/p' || echo "patch")
+          COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset [a-z]*//p' | sed 's/^[[:space:]]*//')
+
+          # Find the existing changeset file
+          CHANGESET_FILE=$(find .changeset -name "*.md" ! -name "README.md" | head -n 1)
+
+          if [ -z "$CHANGESET_FILE" ]; then
+            echo "No existing changeset found, creating a new one..."
+          else
+            echo "Updating existing changeset file: $CHANGESET_FILE"
+          fi
+
+          echo "Creating/updating changeset with type: $BUMP_TYPE"
+          pnpm changeset add --empty --type $BUMP_TYPE --message "## ${{ steps.get-pr.outputs.pr_title }}
+
+          ${COMMENT_CONTENT:+$COMMENT_CONTENT}"
+
+      - name: Commit and push changeset
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .changeset/ pnpm-lock.yaml
+          git commit -m "chore: $([ -z "$CHANGESET_FILE" ] && echo "add" || echo "update") changeset for PR #${{ github.event.issue.number }}"
+          git push origin ${{ steps.get-pr.outputs.pr_branch }} --force
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '✅ changeset $([ -z "$CHANGESET_FILE" ] && echo "created" || echo "updated") successfully'
+              })
+            } catch (error) {
+              console.error('Failed to create comment:', error)
+              process.exit(1)
+            }
