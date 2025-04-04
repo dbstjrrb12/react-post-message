@@ -7,8 +7,8 @@ on:
     types: [created, edited]
 
 jobs:
-  check-changelog:
-    name: Check Changeset
+  detect-package-changes:
+    name: Detect Package Changes
     if: |
       github.event_name == 'pull_request' && 
       github.event.pull_request.base.ref == 'develop'
@@ -18,13 +18,6 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      - name: Debug Event
-        run: |
-          echo "Event Type: ${{ github.event_name }}"
-          echo "PR Base Branch: ${{ github.event.pull_request.base.ref }}"
-          echo "PR Head Branch: ${{ github.event.pull_request.head.ref }}"
-          echo "PR Number: ${{ github.event.pull_request.number }}"
-
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -81,13 +74,6 @@ jobs:
           fi
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Debug Outputs
-        run: |
-          echo "Package Changes Output:"
-          echo "${{ steps.changes.outputs.package_changes }}"
-          echo "Has Changeset Output:"
-          echo "${{ steps.changes.outputs.has_changeset }}"
-
       - name: Create Version Selection Comment
         if: steps.changes.outputs.package_changes != '' && steps.changes.outputs.has_changeset == 'false'
         uses: actions/github-script@v7
@@ -125,12 +111,12 @@ jobs:
               body
             });
 
-  handle-version-selection:
-    name: Handle Version Selection
+  manage-changeset:
+    name: Manage Changeset
     if: |
       github.event_name == 'issue_comment' && 
       github.event.issue.pull_request && 
-      startsWith(github.event.comment.body, '/changeset')
+      contains(github.event.comment.body, '/changeset')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -171,38 +157,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Create or update changeset
-        id: create-changeset
+      - name: Apply changeset
+        id: apply-changeset
         run: |
-          mkdir -p .changeset
           BUMP_TYPE=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset \([a-z]*\).*/\1/p' || echo "patch")
-          CHANGESET_FILE=".changeset/pr-${{ github.event.issue.number }}.md"
+          COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset [a-z]*//p' | sed 's/^[[:space:]]*//')
 
-          if [ -f "$CHANGESET_FILE" ]; then
-            echo "Updating existing changeset file..."
-            EXISTING_BUMP=$(grep -o '"react-post-message": [a-z]*' "$CHANGESET_FILE" | cut -d' ' -f2 || echo "")
-            if [ -n "$EXISTING_BUMP" ]; then
-              BUMP_TYPE=$EXISTING_BUMP
-            fi
+          # Find the existing changeset file
+          CHANGESET_FILE=$(find .changeset -name "*.md" ! -name "README.md" | head -n 1)
+
+          if [ -z "$CHANGESET_FILE" ]; then
+            echo "No existing changeset found, creating a new one..."
           else
-            echo "Creating new changeset file..."
+            echo "Updating existing changeset file: $CHANGESET_FILE"
           fi
 
-          cat > "$CHANGESET_FILE" << EOF
-          ---
-          "react-post-message": $BUMP_TYPE
-          ---
+          echo "Creating/updating changeset with type: $BUMP_TYPE"
+          pnpm changeset add --empty --type $BUMP_TYPE --message "## ${{ steps.get-pr.outputs.pr_title }}
 
-          ${{ steps.get-pr.outputs.pr_title }}
-          EOF
-          echo "changeset_file=$CHANGESET_FILE" >> $GITHUB_OUTPUT
+          ${COMMENT_CONTENT:+$COMMENT_CONTENT}"
 
       - name: Commit and push changeset
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add "${{ steps.create-changeset.outputs.changeset_file }}"
-          git commit -m "chore: $([ -f "${{ steps.create-changeset.outputs.changeset_file }}" ] && echo "update" || echo "add") changeset for PR #${{ github.event.issue.number }}"
+          git add .changeset/ pnpm-lock.yaml
+          git commit -m "chore: $([ -z "$CHANGESET_FILE" ] && echo "add" || echo "update") changeset for PR #${{ github.event.issue.number }}"
           git push origin ${{ steps.get-pr.outputs.pr_branch }} --force
 
       - name: Comment on PR
@@ -214,7 +194,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: '✅ changeset updated successfully'
+                body: '✅ changeset $([ -z "$CHANGESET_FILE" ] && echo "created" || echo "updated") successfully'
               })
             } catch (error) {
               console.error('Failed to create comment:', error)
