@@ -45,30 +45,25 @@ function App() {
 
 ## Changeset Workflow
 
-This project uses changesets to manage versioning and changelog generation. Here's how it works:
+This project uses Changesets for version management. Here's how it works:
 
-1. When you create a PR, you can comment `/changeset [type]` to create a changeset file
+1. When you create a PR that changes packages, the workflow will automatically detect the changes and ask you to select a version bump type.
+2. You can respond with one of these comments:
+   - `/changeset major` - For breaking changes
+   - `/changeset minor` - For new features
+   - `/changeset patch` - For bug fixes
+3. The workflow will create or update a changeset file with your selected version type and PR title.
+4. When the PR is merged, the changeset will be included in the next release.
 
-   - `type` can be `patch`, `minor`, or `major`
-   - The changeset file will be created in the `.changeset` directory
-   - The file will be named with the PR number and title (e.g., `pr-30.md`)
+### Writing Changelog Entries
 
-2. The changeset file will contain:
+When creating a changeset, you can include additional information after the version type:
 
-   - The version bump type
-   - The PR title as the changelog entry
-   - The changeset will be committed to your PR branch
+```
+/changeset patch This fixes a critical bug in the message handling
+```
 
-3. When you merge the PR:
-
-   - The changeset will be applied
-   - The version will be bumped according to the type
-   - A changelog entry will be generated
-
-4. If you need to modify the changeset:
-   - You can edit the `/changeset` comment
-   - The changeset file will be updated automatically
-   - The changes will be committed to your PR branch
+This will be included in the changelog entry for better context.
 
 ## License
 

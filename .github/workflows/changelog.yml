@@ -54,8 +54,8 @@ jobs:
           echo "Package changes:"
           cat package_changes.txt
 
-          find .changeset -name "*.md" ! -name "README.md" > changeset_files.txt 2>/dev/null || true
-          echo "Changeset files:"
+          git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} | grep "^.changeset/.*\.md$" | grep -v "README.md" > changeset_files.txt || true
+          echo "Changeset files in current PR:"
           cat changeset_files.txt
 
           echo "changed_files<<EOF" >> $GITHUB_OUTPUT
@@ -173,7 +173,7 @@ jobs:
           fi
 
           echo "Creating/updating changeset with type: $BUMP_TYPE"
-          pnpm changeset add --empty --type $BUMP_TYPE --message "## ${{ steps.get-pr.outputs.pr_title }}
+          pnpm changeset add --empty --type $BUMP_TYPE --name "pr-${{ github.event.issue.number }}" --message "## ${{ steps.get-pr.outputs.pr_title }}
 
           ${COMMENT_CONTENT:+$COMMENT_CONTENT}"
 
