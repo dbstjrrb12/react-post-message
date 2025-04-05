@@ -3,6 +3,8 @@ name: Changeset Workflow
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    branches:
+      - develop
   issue_comment:
     types: [created, edited]
 
@@ -133,7 +135,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.get-pr.outputs.pr_branch }}
-          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -143,7 +144,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -155,6 +156,12 @@ jobs:
           mkdir -p .changeset
           BUMP_TYPE=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset \([a-z]*\).*/\1/p' || echo "patch")
           COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset [a-z]*//p' | sed 's/^[[:space:]]*//')
+
+          # Debug logs
+          echo "Comment body: ${{ github.event.comment.body }}"
+          echo "BUMP_TYPE: $BUMP_TYPE"
+          echo "COMMENT_CONTENT: $COMMENT_CONTENT"
+
           CHANGESET_FILE=".changeset/pr-${{ github.event.issue.number }}.md"
 
           # Find the existing changeset file
@@ -174,7 +181,9 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add .changeset/ pnpm-lock.yaml
+          # Ignore .pnpm-store directory
+          echo ".pnpm-store/" >> .gitignore
+          git add .changeset/ pnpm-lock.yaml .gitignore
           git commit -m "chore: $([ -z "$CHANGESET_FILE" ] && echo "add" || echo "update") changeset for PR #${{ github.event.issue.number }}"
           git push origin ${{ steps.get-pr.outputs.pr_branch }} --force
 
