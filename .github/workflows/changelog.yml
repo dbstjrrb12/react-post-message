@@ -50,7 +50,6 @@ jobs:
         run: |
           git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} > changed_files.txt
           grep "^packages/" changed_files.txt > package_changes.txt || true
-          git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} | grep "^.changeset/pr-${{ github.event.pull_request.number }}.md$" > changeset_files.txt || true
 
           echo "changed_files<<EOF" >> $GITHUB_OUTPUT
           cat changed_files.txt >> $GITHUB_OUTPUT
@@ -61,15 +60,19 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
           echo "has_changeset<<EOF" >> $GITHUB_OUTPUT
-          if [ -s changeset_files.txt ]; then
-            echo "true" >> $GITHUB_OUTPUT
-          else
+          FILE_NAME="pr-${{ github.event.pull_request.number }}.md"
+          if [ ! -f ".changeset/$FILE_NAME" ]; then
             echo "false" >> $GITHUB_OUTPUT
+          else
+            echo "true" >> $GITHUB_OUTPUT
           fi
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create Version Selection Comment
-        if: steps.changes.outputs.package_changes != '' && steps.changes.outputs.has_changeset == 'false'
+        if: |
+          steps.changes.outputs.package_changes != '' && 
+          steps.changes.outputs.has_changeset == 'false' &&
+          github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           github-token: ${{ github.token }}
