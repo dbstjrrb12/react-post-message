@@ -155,7 +155,7 @@ jobs:
         run: |
           mkdir -p .changeset
           BUMP_TYPE=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset \([a-z]*\).*/\1/p' || echo "patch")
-          COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset [a-z]*//p' | sed 's/^[[:space:]]*//')
+          COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | awk 'BEGIN{RS="";FS="\n"} {for(i=2;i<=NF;i++) print $i}' | sed 's/^[[:space:]]*//')
 
           # Debug logs
           echo "Comment body: ${{ github.event.comment.body }}"
