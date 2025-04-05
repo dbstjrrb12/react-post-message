@@ -47,16 +47,8 @@ jobs:
         id: changes
         run: |
           git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} > changed_files.txt
-          echo "Changed files:"
-          cat changed_files.txt
-
           grep "^packages/" changed_files.txt > package_changes.txt || true
-          echo "Package changes:"
-          cat package_changes.txt
-
-          git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} | grep "^.changeset/.*\.md$" | grep -v "README.md" > changeset_files.txt || true
-          echo "Changeset files in current PR:"
-          cat changeset_files.txt
+          git diff --name-only origin/develop ${{ github.event.pull_request.head.sha }} | grep "^.changeset/pr-${{ github.event.pull_request.number }}.md$" > changeset_files.txt || true
 
           echo "changed_files<<EOF" >> $GITHUB_OUTPUT
           cat changed_files.txt >> $GITHUB_OUTPUT
@@ -160,22 +152,23 @@ jobs:
       - name: Apply changeset
         id: apply-changeset
         run: |
+          mkdir -p .changeset
           BUMP_TYPE=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset \([a-z]*\).*/\1/p' || echo "patch")
           COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed -n 's/\/changeset [a-z]*//p' | sed 's/^[[:space:]]*//')
+          CHANGESET_FILE=".changeset/pr-${{ github.event.issue.number }}.md"
 
           # Find the existing changeset file
-          CHANGESET_FILE=$(find .changeset -name "*.md" ! -name "README.md" | head -n 1)
-
-          if [ -z "$CHANGESET_FILE" ]; then
-            echo "No existing changeset found, creating a new one..."
-          else
-            echo "Updating existing changeset file: $CHANGESET_FILE"
-          fi
-
           echo "Creating/updating changeset with type: $BUMP_TYPE"
-          pnpm changeset add --empty --type $BUMP_TYPE --name "pr-${{ github.event.issue.number }}" --message "## ${{ steps.get-pr.outputs.pr_title }}
 
-          ${COMMENT_CONTENT:+$COMMENT_CONTENT}"
+          cat > "$CHANGESET_FILE" << EOF
+          ---
+          "react-post-message": $BUMP_TYPE
+          ---
+          ## ${{ steps.get-pr.outputs.pr_title }}
+
+          ${COMMENT_CONTENT:+$COMMENT_CONTENT}
+          EOF
+          echo "changeset_file=$CHANGESET_FILE" >> $GITHUB_OUTPUT
 
       - name: Commit and push changeset
         run: |
@@ -190,11 +183,14 @@ jobs:
         with:
           script: |
             try {
+              const changesetFile = `${{ steps.apply-changeset.outputs.changeset_file }}`;
+              const action = changesetFile ? 'updated' : 'created';
+              
               await github.rest.issues.createComment({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: '✅ changeset $([ -z "$CHANGESET_FILE" ] && echo "created" || echo "updated") successfully'
+                body: `✅ changeset ${action} successfully`
               })
             } catch (error) {
               console.error('Failed to create comment:', error)

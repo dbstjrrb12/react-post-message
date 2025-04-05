@@ -42,6 +42,10 @@ importers:
         specifier: 5.4.2
         version: 5.4.2
 
+  docs: {}
+
+  examples/basic: {}
+
 packages:
 
   /@babel/code-frame@7.26.2:
